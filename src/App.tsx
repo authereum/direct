@@ -57,6 +57,17 @@ function App () {
   const [callRequestEditable, setCallRequestEditable] = React.useState<boolean>(
     false
   )
+  const [customTx, setCustomTx] = React.useState<string>(() => {
+    return localStorage.getItem('customTx') || ''
+  })
+  const [customTxHash, setCustomTxHash] = React.useState<string>('')
+  const exampleTx = {
+    to: '',
+    value: '0x0',
+    data: '0x0',
+    gasLimit: '0x0',
+    gasPrice: '0x0'
+  }
 
   useEffect(() => {
     localStorage.setItem('networkName', networkName)
@@ -170,6 +181,53 @@ function App () {
     setCallRequest(null)
   }
 
+  const signTx = async (tx: any) => {
+    console.log('TX', tx)
+
+    tx = await ethers.utils.resolveProperties(tx)
+
+    const gasLimit = 300000
+    const tx1 = encodeParameters(
+      ['address', 'uint256', 'uint256', 'bytes'],
+      [tx.to, tx.value || '0x', gasLimit, tx.data || '0x']
+    )
+
+    const txs = [tx1]
+    console.log('txs', txs)
+
+    const iface = new ethers.utils.Interface(AuthereumAccountAbi)
+    const data = await iface.encodeFunctionData(
+      'executeMultipleMetaTransactions',
+      [txs]
+    )
+
+    const nonce = await provider.getTransactionCount(await wallet.getAddress())
+
+    let txObj: any = {
+      to: contractAddress,
+      value: '0x0',
+      gasLimit,
+      gasPrice: tx.gasPrice,
+      data: data,
+      nonce,
+      chainId: getNetworkId(networkName)
+    }
+
+    txObj = await ethers.utils.resolveProperties(txObj)
+    txObj = await wallet.populateTransaction(txObj)
+
+    let hash = ''
+    if (walletName === 'privateKey') {
+      const signed = await wallet.signTransaction(txObj)
+      const { hash: h } = await provider.sendTransaction(signed)
+      hash = h
+    } else {
+      hash = await wallet.sendUncheckedTransaction(txObj)
+    }
+
+    return hash
+  }
+
   const approveCallRequest = async (payload: any) => {
     try {
       const isTx = ['eth_signTransaction', 'eth_sendTransaction'].includes(
@@ -179,47 +237,7 @@ function App () {
 
       if (isTx) {
         const tx = payload.params[0]
-        console.log('TX', tx)
-
-        const gasLimit = 300000
-        const tx1 = encodeParameters(
-          ['address', 'uint256', 'uint256', 'bytes'],
-          [tx.to, tx.value || '0x', gasLimit, tx.data || '0x']
-        )
-
-        const txs = [tx1]
-        console.log('txs', txs)
-
-        const iface = new ethers.utils.Interface(AuthereumAccountAbi)
-        const data = await iface.encodeFunctionData(
-          'executeMultipleMetaTransactions',
-          [txs]
-        )
-
-        const nonce = await provider.getTransactionCount(
-          await wallet.getAddress()
-        )
-
-        let txObj: any = {
-          to: contractAddress,
-          value: '0x',
-          gasLimit,
-          gasPrice: tx.gasPrice,
-          data: data,
-          nonce,
-          chainId: getNetworkId(networkName)
-        }
-
-        txObj = await ethers.utils.resolveProperties(txObj)
-
-        let hash = ''
-        if (walletName === 'privateKey') {
-          const signed = await wallet.signTransaction(txObj)
-          const { hash: h } = await provider.sendTransaction(signed)
-          hash = h
-        } else {
-          hash = await wallet.sendUncheckedTransaction(txObj)
-        }
+        const hash = await signTx(tx)
         console.log('TXHASH', hash)
         result = {
           id: payload.id,
@@ -420,6 +438,22 @@ function App () {
   const updateNetworkName = (event: any) => {
     setNetworkName(event.target.value)
   }
+  const updateCustomTx = (event: any) => {
+    setCustomTx(event.target.value)
+  }
+  useEffect(() => {
+    localStorage.setItem('customTx', customTx)
+  }, [customTx])
+  const handleCustomTxSubmit = async (event: any) => {
+    event.preventDefault()
+    try {
+      setCustomTxHash('')
+      const hash = await signTx(JSON.parse(customTx))
+      setCustomTxHash(hash)
+    } catch (err) {
+      alert(err.message)
+    }
+  }
   const renderNetworkSelect = () => {
     return (
       <select value={networkName} onChange={updateNetworkName}>
@@ -429,6 +463,24 @@ function App () {
         <option value='rinkeby'>Rinkeby</option>
         <option value='ropsten'>Ropsten</option>
       </select>
+    )
+  }
+  const renderCustomTxForm = () => {
+    return (
+      <div>
+        <form onSubmit={handleCustomTxSubmit}>
+          <label>send custom transaction</label>
+          <textarea
+            placeholder={JSON.stringify(exampleTx, null, 2)}
+            value={customTx}
+            onChange={updateCustomTx}
+          ></textarea>
+          <Button type='submit' color='primary' variant='contained'>
+            Send
+          </Button>
+          {customTxHash}
+        </form>
+      </div>
     )
   }
   const renderConnected = () => {
@@ -451,18 +503,26 @@ function App () {
             <>
               {contractAddress && (
                 <div>
-                  <label>WalletConnect URI</label>
-                  <TextField
-                    variant='outlined'
-                    label='Connect URI'
-                    placeholder='wc:'
-                    type='text'
-                    value={connectUri}
-                    onChange={handleConnectUri}
-                  />
-                  <Button color='primary' variant='contained' onClick={connect}>
-                    Connect
-                  </Button>
+                  <div>
+                    <label>WalletConnect URI</label>
+                    <TextField
+                      variant='outlined'
+                      label='Connect URI'
+                      placeholder='wc:'
+                      type='text'
+                      value={connectUri}
+                      onChange={handleConnectUri}
+                    />
+                    <Button
+                      color='primary'
+                      variant='contained'
+                      onClick={connect}
+                    >
+                      Connect
+                    </Button>
+                  </div>
+                  <div>or</div>
+                  {renderCustomTxForm()}
                 </div>
               )}
             </>

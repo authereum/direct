@@ -25,3 +25,8 @@ pre {
   word-break: break-all;
   white-space: break-spaces;
 }
+
+textarea {
+  width: 100%;
+  height: 200px;
+}
