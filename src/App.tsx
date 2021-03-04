@@ -84,10 +84,10 @@ function App () {
       return
     }
 
-    if (validPrivateKey(privateKey.replace('0x', ''))) {
-      const priv = ethers.utils.hexlify('0x' + privateKey)
+    if (validPrivateKey(privateKey)) {
+      const priv = privateKey.replace(/^(0x)?/, '0x')
       const wal = new ethers.Wallet(priv, provider)
-      localStorage.setItem('privateKey', privateKey)
+      localStorage.setItem('privateKey', priv)
       setWallet(wal)
       localStorage.setItem('walletName', 'privateKey')
     }
@@ -114,8 +114,8 @@ function App () {
 
   const handlePrivateKeyChange = (event: any) => {
     event.preventDefault()
-
-    setPrivateKey(event.target.value)
+    const value = event.target.value.trim()
+    setPrivateKey(value)
   }
 
   const handleConnectUri = (event: any) => {
