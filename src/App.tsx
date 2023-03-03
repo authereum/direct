@@ -13,7 +13,6 @@ import TextField from '@material-ui/core/TextField'
 import Grid from '@material-ui/core/Grid'
 import Card from '@material-ui/core/Card'
 import CardContent from '@material-ui/core/CardContent'
-import AuthereumAccountAbi from './abi/AuthereumAccount.json'
 
 function App () {
   const [ee] = React.useState(() => new EventEmitter())
@@ -182,24 +181,149 @@ function App () {
   }
 
   const signTx = async (tx: any) => {
-    console.log('TX', tx)
+    console.log('user tx', tx)
 
     tx = await ethers.utils.resolveProperties(tx)
 
+    let version = 0
+    try {
+      const iface = new ethers.utils.Interface([
+        {
+          constant: true,
+          inputs: [],
+          name: 'authereumVersion',
+          outputs: [
+            {
+              name: '',
+              type: 'string'
+            }
+          ],
+          payable: false,
+          stateMutability: 'view',
+          type: 'function'
+        }
+      ])
+      const data = iface.encodeFunctionData('authereumVersion', [])
+
+      let txObj: any = {
+        from: contractAddress,
+        to: contractAddress,
+        value: '0x0',
+        data: data,
+        chainId: getNetworkId(networkName)
+      }
+
+      const result = await provider.call(txObj)
+      const decoded = iface.decodeFunctionResult('authereumVersion', result)
+      const _version = Number(decoded[0])
+      if (!_version) {
+        throw new Error('Authereum version not found')
+      }
+      version = _version
+    } catch (err) {
+      const iface = new ethers.utils.Interface([
+        {
+          constant: true,
+          inputs: [],
+          name: 'version',
+          outputs: [
+            {
+              name: '',
+              type: 'string'
+            }
+          ],
+          payable: false,
+          stateMutability: 'view',
+          type: 'function'
+        }
+      ])
+      const data = iface.encodeFunctionData('version', [])
+
+      let txObj: any = {
+        from: contractAddress,
+        to: contractAddress,
+        value: '0x0',
+        data: data,
+        chainId: getNetworkId(networkName)
+      }
+
+      const result = await provider.call(txObj)
+      const decoded = iface.decodeFunctionResult('version', result)
+      const _version = Number(decoded[0])
+      if (!_version) {
+        throw new Error('Authereum version not found')
+      }
+      version = _version
+    }
+
+    console.log('account version:', version)
+
+    let data = '0x'
     const gasLimit = 300000
-    const tx1 = encodeParameters(
-      ['address', 'uint256', 'uint256', 'bytes'],
-      [tx.to, tx.value || '0x', gasLimit, tx.data || '0x']
-    )
+    if (version <= 2020021700) {
+      const tx1 = encodeParameters(
+        ['address', 'uint256', 'uint256', 'bytes'],
+        [tx.to, tx.value || '0x', gasLimit, tx.data || '0x']
+      )
 
-    const txs = [tx1]
-    console.log('txs', txs)
+      const txs = [tx1]
+      console.log('user txs array', txs)
 
-    const iface = new ethers.utils.Interface(AuthereumAccountAbi)
-    const data = await iface.encodeFunctionData(
-      'executeMultipleMetaTransactions',
-      [txs]
-    )
+      const iface = new ethers.utils.Interface([
+        {
+          constant: false,
+          inputs: [
+            {
+              name: '_transactions',
+              type: 'bytes[]'
+            }
+          ],
+          name: 'executeMultipleMetaTransactions',
+          outputs: [
+            {
+              name: '',
+              type: 'bytes[]'
+            }
+          ],
+          payable: false,
+          stateMutability: 'nonpayable',
+          type: 'function'
+        }
+      ])
+      data = iface.encodeFunctionData('executeMultipleMetaTransactions', [txs])
+    } else {
+      const gasLimit = 300000
+      const tx1 = encodeParameters(
+        ['address', 'uint256', 'uint256', 'bytes'],
+        [tx.to, tx.value || '0x', gasLimit, tx.data || '0x']
+      )
+
+      const txs = [tx1]
+      console.log('user txs array', txs)
+
+      const iface = new ethers.utils.Interface([
+        {
+          constant: false,
+          inputs: [
+            {
+              name: '_transactions',
+              type: 'bytes[]'
+            }
+          ],
+          name: 'executeMultipleTransactions',
+          outputs: [
+            {
+              name: '',
+              type: 'bytes[]'
+            }
+          ],
+          payable: false,
+          stateMutability: 'nonpayable',
+          type: 'function'
+        }
+      ])
+      data = iface.encodeFunctionData('executeMultipleTransactions', [txs])
+    }
 
     const nonce = await provider.getTransactionCount(await wallet.getAddress())
 
@@ -212,6 +336,8 @@ function App () {
       nonce,
       chainId: getNetworkId(networkName)
     }
+
+    console.log('contract exec tx', txObj)
 
     txObj = await ethers.utils.resolveProperties(txObj)
     txObj = await wallet.populateTransaction(txObj)
